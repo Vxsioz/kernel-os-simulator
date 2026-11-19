@@ -330,13 +330,33 @@ class OverviewPage(ttk.Frame):
     """Project landing page with the team and a quick module index."""
 
     def __init__(self, parent: tk.Misc, open_module: Callable[[str], None]):
-        super().__init__(parent, style="App.TFrame", padding=(30, 26))
+        super().__init__(parent, style="App.TFrame")
         self._build(open_module)
 
     def _build(self, open_module: Callable[[str], None]) -> None:
-        ttk.Label(self, text="KERNEL", style="PageTitle.TLabel").pack(anchor="w")
-        ttk.Label(self, text="Operating System Simulator", style="Subtitle.TLabel").pack(anchor="w", pady=(4, 16))
-        hero = tk.Frame(self, bg=SURFACE, padx=22, pady=18)
+        viewport = tk.Frame(self, bg=BG)
+        viewport.pack(fill="both", expand=True)
+        canvas = tk.Canvas(viewport, bg=BG, highlightthickness=0, borderwidth=0)
+        scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        content = tk.Frame(canvas, bg=BG, padx=30, pady=24)
+        content_window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_scroll_region(_event: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def fit_content_width(event: tk.Event) -> None:
+            canvas.itemconfigure(content_window, width=event.width)
+
+        content.bind("<Configure>", update_scroll_region)
+        canvas.bind("<Configure>", fit_content_width)
+        self._overview_canvas = canvas
+
+        ttk.Label(content, text="KERNEL", style="PageTitle.TLabel").pack(anchor="w")
+        ttk.Label(content, text="Operating System Simulator", style="Subtitle.TLabel").pack(anchor="w", pady=(4, 12))
+        hero = tk.Frame(content, bg=SURFACE, padx=22, pady=16)
         hero.pack(fill="x", pady=(0, 16))
         tk.Label(hero, text="Explore core operating system algorithms", bg=SURFACE, fg=FG,
                  font=("Segoe UI", 16, "bold")).pack(anchor="w")
@@ -346,8 +366,22 @@ class OverviewPage(ttk.Frame):
         ttk.Button(hero, text="Open CPU Scheduling", style="Accent.TButton",
                    command=lambda: open_module("CPU Scheduling")).pack(anchor="w")
 
-        ttk.Label(self, text="PROJECT MODULES", style="PageTitle.TLabel").pack(anchor="w", pady=(2, 10))
-        cards = tk.Frame(self, bg=BG)
+        # Keep team credits near the top so they're visible without scrolling.
+        ttk.Label(content, text="PROJECT TEAM", style="PageTitle.TLabel").pack(anchor="w", pady=(4, 8))
+        team = tk.Frame(content, bg=BG)
+        team.pack(fill="x")
+        members = (("Amiel Amido", "Group creator"),
+                   ("Kevin James Riparip", "Project team"),
+                   ("Rafael Carlos III", "Project team"))
+        for col, (name, role) in enumerate(members):
+            team.grid_columnconfigure(col, weight=1, uniform="team")
+            card = tk.Frame(team, bg=SURFACE, padx=16, pady=12)
+            card.grid(row=0, column=col, sticky="ew", padx=(0, 6) if col == 0 else (6, 0))
+            tk.Label(card, text=name, bg=SURFACE, fg=FG, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+            tk.Label(card, text=role, bg=SURFACE, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+
+        ttk.Label(content, text="PROJECT MODULES", style="PageTitle.TLabel").pack(anchor="w", pady=(18, 10))
+        cards = tk.Frame(content, bg=BG)
         cards.pack(fill="x")
         for index, title in enumerate(MODULES):
             row, col = divmod(index, 2)
@@ -361,18 +395,16 @@ class OverviewPage(ttk.Frame):
             ttk.Button(card, text="Open module", style="Quiet.TButton",
                        command=lambda name=title: open_module(name)).pack(anchor="w")
 
-        ttk.Label(self, text="PROJECT TEAM", style="PageTitle.TLabel").pack(anchor="w", pady=(18, 10))
-        team = tk.Frame(self, bg=BG)
-        team.pack(fill="x")
-        members = (("Amiel Amido", "Group creator"),
-                   ("Kevin James Riparip", "Project team"),
-                   ("Rafael Carlos III", "Project team"))
-        for col, (name, role) in enumerate(members):
-            team.grid_columnconfigure(col, weight=1, uniform="team")
-            card = tk.Frame(team, bg=SURFACE, padx=16, pady=12)
-            card.grid(row=0, column=col, sticky="ew", padx=(0, 6) if col == 0 else (6, 0))
-            tk.Label(card, text=name, bg=SURFACE, fg=FG, font=("Segoe UI", 11, "bold")).pack(anchor="w")
-            tk.Label(card, text=role, bg=SURFACE, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+        self._bind_mousewheel(content)
+
+    def _bind_mousewheel(self, widget: tk.Widget) -> None:
+        widget.bind("<MouseWheel>", self._scroll_overview, add="+")
+        for child in widget.winfo_children():
+            self._bind_mousewheel(child)
+
+    def _scroll_overview(self, event: tk.Event) -> str:
+        self._overview_canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        return "break"
 
 
 class ModulePage(ttk.Frame):
