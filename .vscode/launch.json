@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "KERNEL OS Simulator",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/kernel_app.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}

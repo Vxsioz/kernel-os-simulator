@@ -1,0 +1,9 @@
+[project]
+name = "kernel-os-simulator"
+version = "1.0.0"
+description = "Interactive operating systems concepts simulator"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.ruff]
+line-length = 100

@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.vscode/settings.json
+gui_original_backup.py.txt
