@@ -14,6 +14,7 @@ class BankerResult:
     need: tuple[tuple[int, ...], ...]
     safe_sequence: tuple[str, ...]
     blocked: tuple[str, ...]
+    trace: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class RequestResult:
     granted: bool
     message: str
     safety: BankerResult
+    trace: tuple[str, ...]
 
 
 def check_safety(
@@ -55,17 +57,24 @@ def check_safety(
     work = available.copy()
     finished = [False] * len(process_ids)
     sequence: list[str] = []
+    trace: list[str] = [f"Start: Work = Available = {work}."]
     changed = True
     while changed:
         changed = False
         for i, pid in enumerate(process_ids):
-            if not finished[i] and all(need[i][j] <= work[j] for j in range(resource_count)):
+            if finished[i]:
+                continue
+            if all(need[i][j] <= work[j] for j in range(resource_count)):
                 work = [work[j] + allocation[i][j] for j in range(resource_count)]
                 finished[i] = True
                 sequence.append(pid)
                 changed = True
+                trace.append(f"{pid}: Need {need[i]} <= Work; finish it and release Allocation {allocation[i]} → Work = {work}.")
+            else:
+                trace.append(f"{pid}: Need {need[i]} is not <= Work {work}; it cannot finish yet.")
     blocked = tuple(process_ids[i] for i, done in enumerate(finished) if not done)
-    return BankerResult(not blocked, tuple(available), tuple(tuple(row) for row in need), tuple(sequence), blocked)
+    trace.append("All processes finished: safe state." if not blocked else f"No remaining process fits Work; unsafe state. Blocked: {list(blocked)}.")
+    return BankerResult(not blocked, tuple(available), tuple(tuple(row) for row in need), tuple(sequence), blocked, tuple(trace))
 
 
 def request_resources(
@@ -85,12 +94,24 @@ def request_resources(
     need = current.need[index]
     if any(value > need[j] for j, value in enumerate(request)):
         raise ValueError(f"{process_id}'s request exceeds its remaining declared need.")
+    trace = [f"Request[{process_id}] = {request}; Need[{process_id}] = {list(need)}; Available = {list(current.available)}.",
+             "Check Request <= Need: yes."]
     if any(value > current.available[j] for j, value in enumerate(request)):
-        return RequestResult(False, "REQUEST MUST WAIT: it exceeds the currently available resources.", current)
+        trace.append("Check Request <= Available: no; leave the allocation unchanged and make the process wait.")
+        return RequestResult(False, "REQUEST MUST WAIT: it exceeds the currently available resources.", current, tuple(trace))
 
     tentative = [row.copy() for row in allocation]
     tentative[index] = [tentative[index][j] + request[j] for j in range(len(total))]
+    tentative_available = [current.available[j] - request[j] for j in range(len(total))]
+    trace.extend([
+        "Check Request <= Available: yes.",
+        f"Tentative Available = Available - Request = {tentative_available}.",
+        f"Tentative Allocation[{process_id}] = {tentative[index]}.",
+        f"Recompute Need[{process_id}] = {list(maximum[index][j] - tentative[index][j] for j in range(len(total)))}.",
+    ])
     after_request = check_safety(process_ids, tentative, maximum, total)
+    trace.extend(after_request.trace)
     if not after_request.safe:
-        return RequestResult(False, "REQUEST DENIED: granting it would leave the system unsafe.", current)
-    return RequestResult(True, "REQUEST GRANTED: the resulting state is safe.", after_request)
+        trace.append("Roll back the tentative allocation; the original state remains unchanged.")
+        return RequestResult(False, "REQUEST DENIED: granting it would leave the system unsafe.", current, tuple(trace))
+    return RequestResult(True, "REQUEST GRANTED: the resulting state is safe.", after_request, tuple(trace))

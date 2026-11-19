@@ -113,22 +113,30 @@ def _run_banker(data: dict[str, str]) -> str:
     if bool(request_pid) != bool(request_values):
         raise ValueError("Enter both a request process ID and its resource vector, or leave both blank.")
     request_status = ""
+    trace = ()
     if request_pid:
         request = [_int(cell, "Requested resource count") for cell in request_values.split(",") if cell.strip()]
         evaluated = banker.request_resources(ids, allocation, maximum, total, request_pid, request)
         result = evaluated.safety
-        request_status = evaluated.message + "\n\n"
+        request_status = evaluated.message
+        trace = evaluated.trace
     else:
         result = banker.check_safety(ids, allocation, maximum, total)
+        trace = result.trace
     resources = [f"R{i + 1}" for i in range(len(total))]
     rows = [[pid, *result.need[i]] for i, pid in enumerate(ids)]
     status = "SAFE STATE" if result.safe else "UNSAFE STATE"
     sequence = " → ".join(result.safe_sequence) if result.safe else "No complete safe sequence exists."
     blocked = f"\nProcesses that could not finish: {', '.join(result.blocked)}" if result.blocked else ""
-    return (request_status + f"BANKER'S ALGORITHM — {status}\n\nTotal resources:     {_vector(total)}"
+    heading = f"BANKER'S ALGORITHM — {status}"
+    if request_pid:
+        heading = f"{request_status}\n\n{heading} ({'state after request' if request_status.startswith('REQUEST GRANTED') else 'unchanged current state'})"
+    return (heading + f"\n\nTotal resources:     {_vector(total)}"
             f"\nAvailable resources: {_vector(result.available)}\n\nNEED MATRIX\n"
             + _format_table(["Process", *resources], rows)
-            + f"\n\nSafe sequence: {sequence}{blocked}")
+            + f"\n\nSafe sequence: {sequence}{blocked}"
+            + "\n\n" + ("REQUEST + SAFETY TRACE" if request_pid else "SAFETY TRACE")
+            + "\n" + "\n".join(trace))
 
 
 def _run_paging(data: dict[str, str]) -> str:
@@ -232,11 +240,11 @@ MODULES: dict[str, ModuleSpec] = {
         "Banker's Algorithm",
         "Check whether the current allocation has a safe completion sequence.",
         (
-            FieldSpec("process_ids", "Process IDs (comma-separated)", "A,B,C"),
-            FieldSpec("total", "Total resources (one per type)", "5,5,5"),
-            FieldSpec("allocation", "Allocation matrix", "1,2,1\n2,0,1\n2,2,1", True, 5,
+            FieldSpec("process_ids", "Process IDs (comma-separated)", "P0,P1,P2,P3,P4"),
+            FieldSpec("total", "Total resources (one per type)", "10,5,7"),
+            FieldSpec("allocation", "Allocation matrix", "0,1,0\n2,0,0\n3,0,2\n2,1,1\n0,0,2", True, 6,
                       help="One row per process; one value per resource."),
-            FieldSpec("maximum", "Maximum demand matrix", "2,2,4\n2,1,3\n3,4,1", True, 5,
+            FieldSpec("maximum", "Maximum demand matrix", "7,5,3\n3,2,2\n9,0,2\n2,2,2\n4,3,3", True, 6,
                       help="Use the same process and resource order as Allocation."),
             FieldSpec("request_pid", "Optional request process ID", "", help="Leave blank to run only the safety check."),
             FieldSpec("request", "Optional resource request", "", help="Comma-separated amount per resource, e.g. 1,0,2."),
@@ -247,9 +255,9 @@ MODULES: dict[str, ModuleSpec] = {
         "Paging",
         "Map logical pages to physical frames and translate a logical address.",
         (
-            FieldSpec("page_size", "Page size", "100"),
-            FieldSpec("logical_address", "Logical address", "250"),
-            FieldSpec("page_table", "Page table", "0,5\n1,2\n2,8\n3,1", True, 7,
+            FieldSpec("page_size", "Page size", "4"),
+            FieldSpec("logical_address", "Logical address", "3"),
+            FieldSpec("page_table", "Page table", "0,5\n1,6\n2,3\n3,2", True, 7,
                       help="One mapping per line: page, frame."),
         ),
         _run_paging,
@@ -270,8 +278,8 @@ MODULES: dict[str, ModuleSpec] = {
         "Validate a segment and offset against its base and limit.",
         (
             FieldSpec("segment", "Segment number", "1"),
-            FieldSpec("offset", "Offset within segment", "750"),
-            FieldSpec("segments", "Segment table", "0,4000,1000\n1,6000,2000\n2,9000,1200", True, 7,
+            FieldSpec("offset", "Offset within segment", "399"),
+            FieldSpec("segments", "Segment table", "0,1400,1000\n1,6300,400\n2,4300,400\n3,3200,1100\n4,4700,1000", True, 7,
                       help="One per line: segment, base, limit."),
         ),
         _run_segmentation,
@@ -281,7 +289,7 @@ MODULES: dict[str, ModuleSpec] = {
         "Allocate processes into memory and inspect the space that remains unused.",
         (
             FieldSpec("mode", "Partition mode", "Variable partitions", hint="Fixed partitions · Variable partitions"),
-            FieldSpec("strategy", "Allocation strategy", "First fit", hint="First fit · Best fit · Worst fit"),
+            FieldSpec("strategy", "Allocation strategy", "First fit", hint="First fit · Best fit · Next fit · Worst fit"),
             FieldSpec("blocks", "Memory blocks (comma-separated)", "100,500,200,300,600"),
             FieldSpec("processes", "Processes", "P1,212\nP2,417\nP3,112\nP4,426", True, 7,
                       help="One per line: ID, size."),

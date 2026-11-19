@@ -38,8 +38,8 @@ def allocate(
         raise ValueError("Enter at least one process.")
     if mode not in {"Fixed partitions", "Variable partitions"}:
         raise ValueError("Choose fixed or variable partitions.")
-    if strategy not in {"First fit", "Best fit", "Worst fit"}:
-        raise ValueError("Choose First fit, Best fit, or Worst fit.")
+    if strategy not in {"First fit", "Best fit", "Worst fit", "Next fit"}:
+        raise ValueError("Choose First fit, Best fit, Worst fit, or Next fit.")
     for size in blocks:
         require_positive(size, "Memory block size")
     ids = [pid for pid, _ in processes]
@@ -52,12 +52,23 @@ def allocate(
     allocations: list[Allocation] = []
     unallocated: list[str] = []
     internal = 0
+    next_start = 0
     for pid, requested in processes:
         candidates = [i for i, available in enumerate(free) if available >= requested]
         if not candidates:
             unallocated.append(pid)
             continue
-        if strategy == "First fit":
+        if strategy == "Next fit":
+            index = None
+            for step in range(len(free)):
+                candidate = (next_start + step) % len(free)
+                if free[candidate] >= requested:
+                    index = candidate
+                    break
+            if index is None:
+                unallocated.append(pid)
+                continue
+        elif strategy == "First fit":
             index = candidates[0]
         elif strategy == "Best fit":
             index = min(candidates, key=lambda i: (free[i], i))
@@ -71,6 +82,8 @@ def allocate(
         else:
             waste = 0
             free[index] -= requested
+        if strategy == "Next fit":
+            next_start = (index + 1) % len(free)
         allocations.append(Allocation(pid, requested, index + 1, block_size, waste))
     holes = tuple(size for size in free if size > 0)
     total_free = sum(holes)

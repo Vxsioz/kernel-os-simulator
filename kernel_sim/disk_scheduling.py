@@ -69,8 +69,9 @@ def schedule(
             if path[-1] != boundary:
                 path.append(boundary)
             path.append(opposite)
-            path.extend(second)
-            order = first + second
+            wrapped = sorted(second, reverse=(direction == "Left"))
+            path.extend(wrapped)
+            order = first + wrapped
         elif algorithm == "LOOK":
             path = [head, *first, *second]
             order = first + second
