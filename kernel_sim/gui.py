@@ -91,12 +91,13 @@ def _run_scheduling(data: dict[str, str]) -> str:
                  for row in _rows(data["processes"], "Processes", 4)]
     result = scheduling.run(data["algorithm"], processes, _int(data["quantum"], "Time quantum"))
     lines = [result.algorithm, "Priority convention: lower number means higher priority.", "",
-             _format_table(["Process", "AT", "BT", "Priority", "CT", "TAT", "WT"],
-                           [[r.pid, r.arrival, r.burst, r.priority, r.completion, r.turnaround, r.waiting] for r in result.rows]), "",
+             _format_table(["Process", "AT", "BT", "Priority", "CT", "TAT", "WT", "RT"],
+                           [[r.pid, r.arrival, r.burst, r.priority, r.completion, r.turnaround, r.waiting, r.response] for r in result.rows]), "",
              "GANTT CHART"]
     lines.append("  " + "  ".join(f"{s.start} ├─ {s.pid or 'IDLE'} ─┤ {s.end}" for s in result.timeline))
     lines.extend(["", f"Average waiting time:    {result.average_waiting:.2f}",
                   f"Average turnaround time: {result.average_turnaround:.2f}",
+                  f"Average response time:   {result.average_response:.2f}",
                   f"CPU utilization:         {result.cpu_utilization:.2f}%",
                   f"Total elapsed time:      {result.makespan}"])
     return "\n".join(lines)
@@ -107,13 +108,24 @@ def _run_banker(data: dict[str, str]) -> str:
     total = [_int(cell, "Total resource count") for cell in data["total"].split(",") if cell.strip()]
     allocation = _number_rows(data["allocation"], "Allocation matrix", len(total))
     maximum = _number_rows(data["maximum"], "Maximum matrix", len(total))
-    result = banker.check_safety(ids, allocation, maximum, total)
+    request_pid = data["request_pid"].strip()
+    request_values = data["request"].strip()
+    if bool(request_pid) != bool(request_values):
+        raise ValueError("Enter both a request process ID and its resource vector, or leave both blank.")
+    request_status = ""
+    if request_pid:
+        request = [_int(cell, "Requested resource count") for cell in request_values.split(",") if cell.strip()]
+        evaluated = banker.request_resources(ids, allocation, maximum, total, request_pid, request)
+        result = evaluated.safety
+        request_status = evaluated.message + "\n\n"
+    else:
+        result = banker.check_safety(ids, allocation, maximum, total)
     resources = [f"R{i + 1}" for i in range(len(total))]
     rows = [[pid, *result.need[i]] for i, pid in enumerate(ids)]
     status = "SAFE STATE" if result.safe else "UNSAFE STATE"
     sequence = " → ".join(result.safe_sequence) if result.safe else "No complete safe sequence exists."
     blocked = f"\nProcesses that could not finish: {', '.join(result.blocked)}" if result.blocked else ""
-    return (f"BANKER'S ALGORITHM — {status}\n\nTotal resources:     {_vector(total)}"
+    return (request_status + f"BANKER'S ALGORITHM — {status}\n\nTotal resources:     {_vector(total)}"
             f"\nAvailable resources: {_vector(result.available)}\n\nNEED MATRIX\n"
             + _format_table(["Process", *resources], rows)
             + f"\n\nSafe sequence: {sequence}{blocked}")
@@ -208,7 +220,7 @@ MODULES: dict[str, ModuleSpec] = {
         "Choose a policy, enter any number of processes, and compare their timing results.",
         (
             FieldSpec("algorithm", "Algorithm", "FCFS",
-                      hint="FCFS · SJF (non-preemptive) · Priority (non-preemptive) · Priority (preemptive) · Round Robin"),
+                      hint="FCFS · SJF · SRTF (preemptive) · Priority · Round Robin"),
             FieldSpec("quantum", "Time quantum (Round Robin)", "2"),
             FieldSpec("processes", "Processes", "P1,0,4,2\nP2,1,2,1\nP3,2,3,3\nP4,3,5,2\nP5,4,6,1\nP6,5,1,2",
                       True, 8,
@@ -226,6 +238,8 @@ MODULES: dict[str, ModuleSpec] = {
                       help="One row per process; one value per resource."),
             FieldSpec("maximum", "Maximum demand matrix", "2,2,4\n2,1,3\n3,4,1", True, 5,
                       help="Use the same process and resource order as Allocation."),
+            FieldSpec("request_pid", "Optional request process ID", "", help="Leave blank to run only the safety check."),
+            FieldSpec("request", "Optional resource request", "", help="Comma-separated amount per resource, e.g. 1,0,2."),
         ),
         _run_banker,
     ),

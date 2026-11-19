@@ -36,9 +36,11 @@ def _merge(segments: list[Segment]) -> tuple[Segment, ...]:
 
 def _result(processes: list[Process], algorithm: str, timeline: list[Segment]) -> ScheduleResult:
     completion: dict[str, int] = {}
+    first_start: dict[str, int] = {}
     for segment in timeline:
         if segment.pid is not None:
             completion[segment.pid] = segment.end
+            first_start.setdefault(segment.pid, segment.start)
     rows = tuple(
         ScheduleRow(
             p.pid,
@@ -48,6 +50,7 @@ def _result(processes: list[Process], algorithm: str, timeline: list[Segment]) -
             completion[p.pid],
             completion[p.pid] - p.arrival,
             completion[p.pid] - p.arrival - p.burst,
+            first_start[p.pid] - p.arrival,
         )
         for p in processes
     )
@@ -59,6 +62,7 @@ def _result(processes: list[Process], algorithm: str, timeline: list[Segment]) -
         _merge(timeline),
         sum(r.waiting for r in rows) / len(rows),
         sum(r.turnaround for r in rows) / len(rows),
+        sum(r.response for r in rows) / len(rows),
         makespan,
         100.0 * busy / makespan if makespan else 0.0,
     )
@@ -96,6 +100,27 @@ def fcfs(processes: list[Process]) -> ScheduleResult:
 def sjf_non_preemptive(processes: list[Process]) -> ScheduleResult:
     _validate(processes)
     return _result(processes, "Shortest Job First (non-preemptive)", _non_preemptive(processes, lambda p: (p.burst, p.arrival)))
+
+
+def shortest_remaining_time_first(processes: list[Process]) -> ScheduleResult:
+    """Preemptive SJF: run the ready process with the least remaining CPU time."""
+    _validate(processes)
+    remaining = {p.pid: p.burst for p in processes}
+    order = {p.pid: i for i, p in enumerate(processes)}
+    timeline: list[Segment] = []
+    time = 0
+    while any(value > 0 for value in remaining.values()):
+        ready = [p for p in processes if p.arrival <= time and remaining[p.pid] > 0]
+        if not ready:
+            next_time = min(p.arrival for p in processes if remaining[p.pid] > 0)
+            timeline.append(Segment(time, next_time, None))
+            time = next_time
+            continue
+        current = min(ready, key=lambda p: (remaining[p.pid], p.arrival, order[p.pid]))
+        timeline.append(Segment(time, time + 1, current.pid))
+        remaining[current.pid] -= 1
+        time += 1
+    return _result(processes, "Shortest Remaining Time First (SRTF; preemptive)", timeline)
 
 
 def priority_non_preemptive(processes: list[Process]) -> ScheduleResult:
@@ -160,6 +185,7 @@ def run(algorithm: str, processes: list[Process], quantum: int = 2) -> ScheduleR
     choices = {
         "FCFS": fcfs,
         "SJF (non-preemptive)": sjf_non_preemptive,
+        "SRTF (preemptive)": shortest_remaining_time_first,
         "Priority (non-preemptive)": priority_non_preemptive,
         "Priority (preemptive)": priority_preemptive,
         "Round Robin": lambda items: round_robin(items, quantum),

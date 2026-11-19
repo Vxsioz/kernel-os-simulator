@@ -29,6 +29,7 @@ class ScheduleRow:
     completion: int
     turnaround: int
     waiting: int
+    response: int
 
 
 @dataclass(frozen=True)
@@ -38,5 +39,6 @@ class ScheduleResult:
     timeline: tuple[Segment, ...]
     average_waiting: float
     average_turnaround: float
+    average_response: float
     makespan: int
     cpu_utilization: float

@@ -13,8 +13,8 @@ To work on the code, install [Visual Studio Code](https://code.visualstudio.com/
 
 ## Modules
 
-- CPU Scheduling: FCFS, SJF, priority, and Round Robin
-- Banker's Algorithm: need and available resources, safe-state check, and safe sequence
+- CPU Scheduling: FCFS, non-preemptive SJF, preemptive SRTF, priority, and Round Robin, with response-time metrics
+- Banker's Algorithm: need and available resources, safe-state check, safe sequence, and optional tentative resource requests
 - Paging and Page Replacement: page mapping, address translation, FIFO, LRU, and Optimal
 - Segmentation: segment-table checks and logical-address translation
 - Fragmentation: First Fit, Best Fit, and Worst Fit

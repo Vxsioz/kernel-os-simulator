@@ -16,6 +16,13 @@ class BankerResult:
     blocked: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class RequestResult:
+    granted: bool
+    message: str
+    safety: BankerResult
+
+
 def check_safety(
     process_ids: list[str], allocation: list[list[int]], maximum: list[list[int]], total: list[int]
 ) -> BankerResult:
@@ -59,3 +66,31 @@ def check_safety(
                 changed = True
     blocked = tuple(process_ids[i] for i, done in enumerate(finished) if not done)
     return BankerResult(not blocked, tuple(available), tuple(tuple(row) for row in need), tuple(sequence), blocked)
+
+
+def request_resources(
+    process_ids: list[str], allocation: list[list[int]], maximum: list[list[int]],
+    total: list[int], process_id: str, request: list[int],
+) -> RequestResult:
+    """Evaluate a tentative request and commit it only if the resulting state is safe."""
+    current = check_safety(process_ids, allocation, maximum, total)
+    if process_id not in process_ids:
+        raise ValueError(f"Unknown process ID: {process_id}")
+    if len(request) != len(total):
+        raise ValueError(f"The request needs {len(total)} resource values.")
+    for value in request:
+        require_non_negative(value, "Resource request")
+
+    index = process_ids.index(process_id)
+    need = current.need[index]
+    if any(value > need[j] for j, value in enumerate(request)):
+        raise ValueError(f"{process_id}'s request exceeds its remaining declared need.")
+    if any(value > current.available[j] for j, value in enumerate(request)):
+        return RequestResult(False, "REQUEST MUST WAIT: it exceeds the currently available resources.", current)
+
+    tentative = [row.copy() for row in allocation]
+    tentative[index] = [tentative[index][j] + request[j] for j in range(len(total))]
+    after_request = check_safety(process_ids, tentative, maximum, total)
+    if not after_request.safe:
+        return RequestResult(False, "REQUEST DENIED: granting it would leave the system unsafe.", current)
+    return RequestResult(True, "REQUEST GRANTED: the resulting state is safe.", after_request)
