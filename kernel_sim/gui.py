@@ -277,7 +277,7 @@ MODULES: dict[str, ModuleSpec] = {
         "Use plain numbers or suffix times with hr/s or min/s. Bare values mean minutes when any suffix is used.",
         (
             FieldSpec("algorithm", "Algorithm", "FCFS",
-                      hint="FCFS · SJF · SRTF (preemptive) · Priority · Round Robin"),
+                      hint="FCFS · SJF (non-preemptive) · SRTF (preemptive) · Priority (non-preemptive) · Priority (preemptive) · Round Robin"),
             FieldSpec("quantum", "Time quantum (Round Robin)", "2"),
             FieldSpec("processes", "Processes", "P1,0,4,2\nP2,1,2,1\nP3,2,3,3\nP4,3,5,2\nP5,4,6,1\nP6,5,1,2",
                       True, 8,
@@ -719,8 +719,14 @@ class KernelApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("KERNEL · Operating System Simulator")
-        self.geometry("1440x920")
-        self.minsize(1100, 720)
+        # Fit the window to the screen (laptops and projectors are often 1366x768 or 1280x720).
+        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        width = min(1440, screen_w - 40)
+        height = min(920, screen_h - 100)  # leave room for the title bar and taskbar
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2 - 20)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(min(1100, width), min(640, height))
         self.configure(bg=BG)
         self._style()
         self.order = ["Overview", *MODULES]
