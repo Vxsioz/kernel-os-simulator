@@ -21,11 +21,11 @@ To work on the code, install [Visual Studio Code](https://code.visualstudio.com/
 - Disk Scheduling: FCFS, SSTF, SCAN, C-SCAN, LOOK, and C-LOOK
 - Multiprogramming: time-sliced CPU sharing and memory admission
 
-The CPU scheduling results include a time-scaled Gantt chart with individual process blocks and boundary times.
+The CPU scheduling page shows a time-scaled Gantt chart with individual process blocks and boundary times below the process inputs.
 
 ## Project team
 
-- Amiel Amido — Group creator
+- Amiel Amido — Group leader
 - Kevin James Riparip — Project team
 - Rafael Carlos III — Project team
 

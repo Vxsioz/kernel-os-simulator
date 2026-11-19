@@ -354,23 +354,11 @@ class OverviewPage(ttk.Frame):
         canvas.bind("<Configure>", fit_content_width)
         self._overview_canvas = canvas
 
-        ttk.Label(content, text="KERNEL", style="PageTitle.TLabel").pack(anchor="w")
-        ttk.Label(content, text="Operating System Simulator", style="Subtitle.TLabel").pack(anchor="w", pady=(4, 12))
-        hero = tk.Frame(content, bg=SURFACE, padx=22, pady=16)
-        hero.pack(fill="x", pady=(0, 16))
-        tk.Label(hero, text="Explore core operating system algorithms", bg=SURFACE, fg=FG,
-                 font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        tk.Label(hero, text="Run simulations, edit examples, and follow each algorithm's output step by step.",
-                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 10), wraplength=900,
-                 justify="left").pack(anchor="w", pady=(6, 12))
-        ttk.Button(hero, text="Open CPU Scheduling", style="Accent.TButton",
-                   command=lambda: open_module("CPU Scheduling")).pack(anchor="w")
-
-        # Keep team credits near the top so they're visible without scrolling.
-        ttk.Label(content, text="PROJECT TEAM", style="PageTitle.TLabel").pack(anchor="w", pady=(4, 8))
+        # Keep the overview focused on the requested team and module sections.
+        ttk.Label(content, text="PROJECT TEAM", style="PageTitle.TLabel").pack(anchor="w", pady=(0, 8))
         team = tk.Frame(content, bg=BG)
         team.pack(fill="x")
-        members = (("Amiel Amido", "Group creator"),
+        members = (("Amiel Amido", "Group leader"),
                    ("Kevin James Riparip", "Project team"),
                    ("Rafael Carlos III", "Project team"))
         for col, (name, role) in enumerate(members):
@@ -504,14 +492,10 @@ class ModulePage(ttk.Frame):
             widget.bind("<Control-Return>", self._shortcut_run)
             self.widgets[field.key] = widget
 
-        heading = ttk.Frame(output_panel, style="Panel.TFrame")
-        heading.pack(fill="x", pady=(0, 6))
-        ttk.Label(heading, text="SIMULATION OUTPUT", style="SectionLabel.TLabel").pack(side="left")
         if self.spec.title == "CPU Scheduling":
-            chart_panel = tk.Frame(output_panel, bg=SURFACE)
-            chart_panel.pack(fill="x", pady=(0, 10))
-            tk.Label(chart_panel, text="GANTT CHART", bg=SURFACE, fg=ACCENT,
-                     font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+            chart_panel = ttk.Frame(fields_frame, style="Panel.TFrame")
+            chart_panel.pack(fill="x", pady=(4, 12))
+            ttk.Label(chart_panel, text="GANTT CHART", style="FieldLabel.TLabel").pack(anchor="w", pady=(0, 6))
             self.gantt_canvas = tk.Canvas(chart_panel, height=112, bg="#0b0e11",
                                           highlightthickness=1, highlightbackground=BORDER,
                                           borderwidth=0)
@@ -519,6 +503,10 @@ class ModulePage(ttk.Frame):
             gantt_scroll = ttk.Scrollbar(chart_panel, orient="horizontal", command=self.gantt_canvas.xview)
             gantt_scroll.pack(fill="x")
             self.gantt_canvas.configure(xscrollcommand=gantt_scroll.set)
+
+        heading = ttk.Frame(output_panel, style="Panel.TFrame")
+        heading.pack(fill="x", pady=(0, 6))
+        ttk.Label(heading, text="SIMULATION OUTPUT", style="SectionLabel.TLabel").pack(side="left")
 
         output_frame = tk.Frame(output_panel, bg=SURFACE)
         output_frame.pack(fill="both", expand=True)
