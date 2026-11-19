@@ -21,6 +21,14 @@ To work on the code, install [Visual Studio Code](https://code.visualstudio.com/
 - Disk Scheduling: FCFS, SSTF, SCAN, C-SCAN, LOOK, and C-LOOK
 - Multiprogramming: time-sliced CPU sharing and memory admission
 
+The CPU scheduling results include a time-scaled Gantt chart with individual process blocks and boundary times.
+
+## Project team
+
+- Amiel Amido — Group creator
+- Kevin James Riparip — Project team
+- Rafael Carlos III — Project team
+
 ## Project files
 
 `kernel_app.py` starts the application. The `kernel_sim` folder contains the interface and the individual simulation modules. `run.bat` is a Windows launcher, and `.vscode/launch.json` provides a VS Code debug configuration.

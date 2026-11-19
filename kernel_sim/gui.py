@@ -93,8 +93,7 @@ def _run_scheduling(data: dict[str, str]) -> str:
     lines = [result.algorithm, "Priority convention: lower number means higher priority.", "",
              _format_table(["Process", "AT", "BT", "Priority", "CT", "TAT", "WT", "RT"],
                            [[r.pid, r.arrival, r.burst, r.priority, r.completion, r.turnaround, r.waiting, r.response] for r in result.rows]), "",
-             "GANTT CHART"]
-    lines.append("  " + "  ".join(f"{s.start} ├─ {s.pid or 'IDLE'} ─┤ {s.end}" for s in result.timeline))
+             "GANTT CHART · see time-scaled blocks below"]
     lines.extend(["", f"Average waiting time:    {result.average_waiting:.2f}",
                   f"Average turnaround time: {result.average_turnaround:.2f}",
                   f"Average response time:   {result.average_response:.2f}",
@@ -324,11 +323,64 @@ MODULES: dict[str, ModuleSpec] = {
 }
 
 
+PROCESS_COLORS = ("#d99a2b", "#398c82", "#536fc4", "#a45d8a", "#57885d", "#bd684f", "#547f9c")
+
+
+class OverviewPage(ttk.Frame):
+    """Project landing page with the team and a quick module index."""
+
+    def __init__(self, parent: tk.Misc, open_module: Callable[[str], None]):
+        super().__init__(parent, style="App.TFrame", padding=(30, 26))
+        self._build(open_module)
+
+    def _build(self, open_module: Callable[[str], None]) -> None:
+        ttk.Label(self, text="KERNEL", style="PageTitle.TLabel").pack(anchor="w")
+        ttk.Label(self, text="Operating System Simulator", style="Subtitle.TLabel").pack(anchor="w", pady=(4, 16))
+        hero = tk.Frame(self, bg=SURFACE, padx=22, pady=18)
+        hero.pack(fill="x", pady=(0, 16))
+        tk.Label(hero, text="Explore core operating system algorithms", bg=SURFACE, fg=FG,
+                 font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        tk.Label(hero, text="Run simulations, edit examples, and follow each algorithm's output step by step.",
+                 bg=SURFACE, fg=MUTED, font=("Segoe UI", 10), wraplength=900,
+                 justify="left").pack(anchor="w", pady=(6, 12))
+        ttk.Button(hero, text="Open CPU Scheduling", style="Accent.TButton",
+                   command=lambda: open_module("CPU Scheduling")).pack(anchor="w")
+
+        ttk.Label(self, text="PROJECT MODULES", style="PageTitle.TLabel").pack(anchor="w", pady=(2, 10))
+        cards = tk.Frame(self, bg=BG)
+        cards.pack(fill="x")
+        for index, title in enumerate(MODULES):
+            row, col = divmod(index, 2)
+            cards.grid_columnconfigure(col, weight=1, uniform="module")
+            card = tk.Frame(cards, bg=SURFACE, padx=16, pady=12)
+            card.grid(row=row, column=col, sticky="ew", padx=(0, 8) if col == 0 else (8, 0), pady=5)
+            tk.Label(card, text=title, bg=SURFACE, fg=ACCENT,
+                     font=("Segoe UI", 11, "bold")).pack(anchor="w")
+            tk.Label(card, text=MODULES[title].subtitle, bg=SURFACE, fg=MUTED,
+                     font=("Segoe UI", 9), wraplength=430, justify="left").pack(anchor="w", pady=(4, 8))
+            ttk.Button(card, text="Open module", style="Quiet.TButton",
+                       command=lambda name=title: open_module(name)).pack(anchor="w")
+
+        ttk.Label(self, text="PROJECT TEAM", style="PageTitle.TLabel").pack(anchor="w", pady=(18, 10))
+        team = tk.Frame(self, bg=BG)
+        team.pack(fill="x")
+        members = (("Amiel Amido", "Group creator"),
+                   ("Kevin James Riparip", "Project team"),
+                   ("Rafael Carlos III", "Project team"))
+        for col, (name, role) in enumerate(members):
+            team.grid_columnconfigure(col, weight=1, uniform="team")
+            card = tk.Frame(team, bg=SURFACE, padx=16, pady=12)
+            card.grid(row=0, column=col, sticky="ew", padx=(0, 6) if col == 0 else (6, 0))
+            tk.Label(card, text=name, bg=SURFACE, fg=FG, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+            tk.Label(card, text=role, bg=SURFACE, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+
+
 class ModulePage(ttk.Frame):
     def __init__(self, parent: tk.Misc, spec: ModuleSpec):
         super().__init__(parent, style="App.TFrame", padding=(26, 22))
         self.spec = spec
         self.widgets: dict[str, tk.Widget] = {}
+        self.gantt_canvas: tk.Canvas | None = None
         self._build()
 
     def _build(self) -> None:
@@ -423,6 +475,19 @@ class ModulePage(ttk.Frame):
         heading = ttk.Frame(output_panel, style="Panel.TFrame")
         heading.pack(fill="x", pady=(0, 6))
         ttk.Label(heading, text="SIMULATION OUTPUT", style="SectionLabel.TLabel").pack(side="left")
+        if self.spec.title == "CPU Scheduling":
+            chart_panel = tk.Frame(output_panel, bg=SURFACE)
+            chart_panel.pack(fill="x", pady=(0, 10))
+            tk.Label(chart_panel, text="GANTT CHART", bg=SURFACE, fg=ACCENT,
+                     font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+            self.gantt_canvas = tk.Canvas(chart_panel, height=112, bg="#0b0e11",
+                                          highlightthickness=1, highlightbackground=BORDER,
+                                          borderwidth=0)
+            self.gantt_canvas.pack(fill="x")
+            gantt_scroll = ttk.Scrollbar(chart_panel, orient="horizontal", command=self.gantt_canvas.xview)
+            gantt_scroll.pack(fill="x")
+            self.gantt_canvas.configure(xscrollcommand=gantt_scroll.set)
+
         output_frame = tk.Frame(output_panel, bg=SURFACE)
         output_frame.pack(fill="both", expand=True)
         output_frame.rowconfigure(0, weight=1)
@@ -482,8 +547,15 @@ class ModulePage(ttk.Frame):
             message = f"Something unexpected happened while running: {exc}"
         else:
             self._write_output(result)
+            if self.gantt_canvas is not None:
+                try:
+                    self._draw_gantt(self.read_values())
+                except (ValueError, KeyError, IndexError):
+                    self._clear_gantt()
             self.status.configure(text="Simulation complete", foreground=GREEN)
             return
+        if self.gantt_canvas is not None:
+            self._clear_gantt()
         self._write_output(f"INPUT NEEDS ATTENTION\n\n{message}\n\nCorrect the inputs and try again.", "error")
         self.status.configure(text="Could not run · check the input", foreground=RED)
 
@@ -499,7 +571,53 @@ class ModulePage(ttk.Frame):
                 widget.delete(0, "end")  # type: ignore[union-attr]
                 widget.insert(0, field.default)  # type: ignore[union-attr]
         self.status.configure(text="Example inputs restored", foreground=MUTED)
+        if self.gantt_canvas is not None:
+            self._clear_gantt()
         self._write_output("Example inputs restored. Press Run simulation to view the results.")
+
+    def _clear_gantt(self) -> None:
+        if self.gantt_canvas is not None:
+            self.gantt_canvas.delete("all")
+            self.gantt_canvas.configure(scrollregion=(0, 0, 1, 1))
+
+    def _draw_gantt(self, data: dict[str, str]) -> None:
+        if self.gantt_canvas is None:
+            return
+        processes = [Process(row[0], _int(row[1], "Arrival time"), _int(row[2], "Burst time"),
+                             _int(row[3], "Priority"))
+                     for row in _rows(data["processes"], "Processes", 4)]
+        result = scheduling.run(data["algorithm"], processes, _int(data["quantum"], "Time quantum"))
+        canvas = self.gantt_canvas
+        canvas.delete("all")
+        left, right, top, bottom = 28, 20, 24, 66
+        unit = 48
+        extent = max(1, result.makespan)
+        width = left + extent * unit + right
+        colors = {process.pid: PROCESS_COLORS[index % len(PROCESS_COLORS)]
+                  for index, process in enumerate(processes)}
+        canvas.create_text(left, 10, anchor="w", text="CPU time", fill=MUTED,
+                           font=("Segoe UI", 8))
+        if not result.timeline:
+            canvas.create_text(left, 48, anchor="w", text="No scheduled intervals", fill=MUTED)
+        for interval in result.timeline:
+            x1 = left + interval.start * unit
+            x2 = left + interval.end * unit
+            color = colors.get(interval.pid, "#353b44") if interval.pid else "#242a32"
+            canvas.create_rectangle(x1, top, x2, bottom, fill=color, outline="#0b0e11", width=2)
+            label = interval.pid or "IDLE"
+            if x2 - x1 >= 32:
+                canvas.create_text((x1 + x2) / 2, (top + bottom) / 2, text=label,
+                                  fill="#ffffff", font=("Segoe UI", 9, "bold"))
+        boundaries = {0, result.makespan}
+        for interval in result.timeline:
+            boundaries.add(interval.start)
+            boundaries.add(interval.end)
+        for tick in sorted(boundaries):
+            x = left + tick * unit
+            canvas.create_line(x, bottom + 2, x, bottom + 8, fill=MUTED)
+            canvas.create_text(x, bottom + 13, text=str(tick), fill=FG,
+                               font=("Cascadia Mono", 8))
+        canvas.configure(scrollregion=(0, 0, width, 92))
 
     def _write_output(self, content: str, tag: str | None = None) -> None:
         self.output.configure(state="normal")
@@ -536,13 +654,13 @@ class KernelApp(tk.Tk):
         self.minsize(1100, 720)
         self.configure(bg=BG)
         self._style()
-        self.order = list(MODULES)
-        self.current = self.order[0]
-        self.pages: dict[str, ModulePage] = {}
+        self.order = ["Overview", *MODULES]
+        self.current = "Overview"
+        self.pages: dict[str, ModulePage | OverviewPage] = {}
         self.nav_buttons: dict[str, ttk.Button] = {}
         self._build_shell()
         self._bind_shortcuts()
-        self.show_module(self.order[0])
+        self.show_module("Overview")
 
     def _style(self) -> None:
         style = ttk.Style(self)
@@ -601,12 +719,15 @@ class KernelApp(tk.Tk):
         sidebar = ttk.Frame(workspace, style="Sidebar.TFrame", width=248, padding=(14, 20))
         sidebar.grid(row=0, column=0, sticky="ns")
         sidebar.grid_propagate(False)
-        ttk.Label(sidebar, text="SIMULATOR MODULES", style="Hint.TLabel").pack(anchor="w", padx=8, pady=(0, 12))
-        for title in MODULES:
+        ttk.Label(sidebar, text="PROJECT", style="Hint.TLabel").pack(anchor="w", padx=8, pady=(0, 8))
+        for title in self.order:
             button = ttk.Button(sidebar, text=title, style="Nav.TButton",
                                 command=lambda name=title: self.show_module(name))
             button.pack(fill="x", pady=2)
             self.nav_buttons[title] = button
+            if title == "Overview":
+                ttk.Label(sidebar, text="SIMULATOR MODULES", style="Hint.TLabel").pack(
+                    anchor="w", padx=8, pady=(14, 8))
         ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=(18, 12))
         tk.Label(sidebar, text="Add rows as needed.\nInputs are checked before each run.",
                  bg=SIDEBAR, fg=MUTED, justify="left", font=("Segoe UI", 9),
@@ -616,14 +737,22 @@ class KernelApp(tk.Tk):
         self.content.grid(row=0, column=1, sticky="nsew")
         self.content.rowconfigure(0, weight=1)
         self.content.columnconfigure(0, weight=1)
+        overview = OverviewPage(self.content, self.show_module)
+        overview.grid(row=0, column=0, sticky="nsew")
+        self.pages["Overview"] = overview
         for title, spec in MODULES.items():
             page = ModulePage(self.content, spec)
             page.grid(row=0, column=0, sticky="nsew")
             self.pages[title] = page
 
     def _bind_shortcuts(self) -> None:
-        self.bind_all("<Control-Return>", lambda _event: self.pages[self.current].run_simulation())
-        self.bind_all("<F5>", lambda _event: self.pages[self.current].run_simulation())
+        self.bind_all("<Control-Return>", lambda _event: self._run_current_simulation())
+        self.bind_all("<F5>", lambda _event: self._run_current_simulation())
+
+    def _run_current_simulation(self) -> None:
+        page = self.pages.get(self.current)
+        if isinstance(page, ModulePage):
+            page.run_simulation()
 
     def show_module(self, title: str) -> None:
         self.current = title
