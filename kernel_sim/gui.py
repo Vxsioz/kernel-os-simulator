@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk
@@ -52,6 +53,46 @@ def _int(value: str, label: str) -> int:
         raise ValueError(f"{label} must be a whole number.") from exc
 
 
+_TIME_VALUE = re.compile(
+    r"^\s*(\d+(?:\.\d+)?)\s*(hr/s|hrs?/s|hours?|hrs?|min/s|mins?/s|minutes?|mins?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _time_value(value: str, label: str) -> tuple[int, bool]:
+    """Parse a time as minutes when it has an hr/min suffix; bare values stay unitless."""
+    match = _TIME_VALUE.fullmatch(value)
+    if not match:
+        raise ValueError(f"{label} must be a number, optionally followed by hr/s or min/s (for example, 2 hr/s or 30 min/s).")
+    number = float(match.group(1))
+    unit = (match.group(2) or "").lower()
+    explicit = bool(unit)
+    if unit.startswith("hr") or unit.startswith("hour"):
+        number *= 60
+    if not number.is_integer():
+        raise ValueError(f"{label} must resolve to a whole number of minutes.")
+    return int(number), explicit
+
+
+def _time_label(has_units: bool) -> str:
+    return "minutes (unitless values treated as minutes)" if has_units else "time units"
+
+
+def _scheduling_inputs(data: dict[str, str]) -> tuple[list[Process], int, bool]:
+    rows = _rows(data["processes"], "Processes", 4)
+    parsed_rows = []
+    has_units = False
+    for row in rows:
+        arrival, arrival_unit = _time_value(row[1], f"Arrival time for {row[0]}")
+        burst, burst_unit = _time_value(row[2], f"Burst time for {row[0]}")
+        has_units |= arrival_unit or burst_unit
+        parsed_rows.append((row[0], arrival, burst, _int(row[3], f"Priority for {row[0]}")))
+    quantum, quantum_unit = _time_value(data["quantum"], "Time quantum")
+    has_units |= quantum_unit
+    processes = [Process(pid, arrival, burst, priority) for pid, arrival, burst, priority in parsed_rows]
+    return processes, quantum, has_units
+
+
 def _rows(value: str, label: str, columns: int | None = None) -> list[list[str]]:
     parsed: list[list[str]] = []
     try:
@@ -87,10 +128,10 @@ def _vector(values: tuple[int, ...] | list[int]) -> str:
 
 
 def _run_scheduling(data: dict[str, str]) -> str:
-    processes = [Process(row[0], _int(row[1], "Arrival time"), _int(row[2], "Burst time"), _int(row[3], "Priority"))
-                 for row in _rows(data["processes"], "Processes", 4)]
-    result = scheduling.run(data["algorithm"], processes, _int(data["quantum"], "Time quantum"))
-    lines = [result.algorithm, "Priority convention: lower number means higher priority.", "",
+    processes, quantum, has_units = _scheduling_inputs(data)
+    result = scheduling.run(data["algorithm"], processes, quantum)
+    lines = [result.algorithm, f"Time unit: {_time_label(has_units)}.",
+             "Priority convention: lower number means higher priority.", "",
              _format_table(["Process", "AT", "BT", "Priority", "CT", "TAT", "WT", "RT"],
                            [[r.pid, r.arrival, r.burst, r.priority, r.completion, r.turnaround, r.waiting, r.response] for r in result.rows]), "",
              "GANTT CHART · see time-scaled blocks below"]
@@ -201,15 +242,24 @@ def _run_disk(data: dict[str, str]) -> str:
 
 
 def _run_multiprogramming(data: dict[str, str]) -> str:
-    programs = [multiprogramming.Program(row[0], _int(row[1], "Arrival time"),
-                                         _int(row[2], "CPU burst"), _int(row[3], "Memory requirement"))
-                for row in _rows(data["programs"], "Programs", 4)]
-    result = multiprogramming.simulate(programs, _int(data["memory"], "Memory capacity"), _int(data["quantum"], "Time quantum"))
+    rows = _rows(data["programs"], "Programs", 4)
+    parsed_rows = []
+    has_units = False
+    for row in rows:
+        arrival, arrival_unit = _time_value(row[1], f"Arrival time for {row[0]}")
+        burst, burst_unit = _time_value(row[2], f"CPU burst for {row[0]}")
+        has_units |= arrival_unit or burst_unit
+        parsed_rows.append((row[0], arrival, burst, _int(row[3], "Memory requirement")))
+    quantum, quantum_unit = _time_value(data["quantum"], "Time quantum")
+    has_units |= quantum_unit
+    programs = [multiprogramming.Program(*row) for row in parsed_rows]
+    result = multiprogramming.simulate(programs, _int(data["memory"], "Memory capacity"), quantum)
     rows = [[p.pid, p.arrival, p.cpu_burst, p.memory_mb] for p in programs]
     states = [[p.pid, p.state, p.memory_mb, p.completion if p.completion is not None else "—",
                p.waiting if p.waiting is not None else "—"] for p in result.summaries]
     timeline = "  ".join(f"{start}–{end}: {pid}" for start, end, pid in result.timeline)
-    return ("ROUND-ROBIN MULTIPROGRAMMING SIMULATION\n\nINPUT PROGRAMS\n"
+    return ("ROUND-ROBIN MULTIPROGRAMMING SIMULATION\n"
+            + f"Time unit: {_time_label(has_units)}.\n\nINPUT PROGRAMS\n"
             + _format_table(["Program", "Arrival", "CPU burst", "Memory MB"], rows)
             + "\n\nFINAL STATUS\n"
             + _format_table(["Program", "State", "Memory MB", "Completion", "Waiting"], states)
@@ -224,14 +274,14 @@ def _run_multiprogramming(data: dict[str, str]) -> str:
 MODULES: dict[str, ModuleSpec] = {
     "CPU Scheduling": ModuleSpec(
         "CPU Scheduling",
-        "Choose a policy, enter any number of processes, and compare their timing results.",
+        "Use plain numbers or suffix times with hr/s or min/s. Bare values mean minutes when any suffix is used.",
         (
             FieldSpec("algorithm", "Algorithm", "FCFS",
                       hint="FCFS · SJF · SRTF (preemptive) · Priority · Round Robin"),
             FieldSpec("quantum", "Time quantum (Round Robin)", "2"),
             FieldSpec("processes", "Processes", "P1,0,4,2\nP2,1,2,1\nP3,2,3,3\nP4,3,5,2\nP5,4,6,1\nP6,5,1,2",
                       True, 8,
-                      help="One per line: ID, arrival, burst, priority."),
+                      help="One per line: ID, arrival, burst, priority. Example times: 1 hr/s, 30 min/s."),
         ),
         _run_scheduling,
     ),
@@ -311,12 +361,12 @@ MODULES: dict[str, ModuleSpec] = {
     ),
     "Multiprogramming": ModuleSpec(
         "Multiprogramming",
-        "Share CPU time and a finite memory pool across programs with flexible input.",
+        "Share CPU time and memory. Suffix times with hr/s or min/s; bare values mean minutes when units are used.",
         (
             FieldSpec("memory", "Available memory (MB)", "1024"),
             FieldSpec("quantum", "CPU time slice", "2"),
             FieldSpec("programs", "Programs", "A,0,5,400\nB,1,3,300\nC,2,4,500\nD,3,2,256", True, 8,
-                      help="One per line: ID, arrival, CPU burst, memory (MB)."),
+                      help="One per line: ID, arrival, CPU burst, memory (MB). Example times: 1 hr/s, 30 min/s."),
         ),
         _run_multiprogramming,
     ),
@@ -492,10 +542,14 @@ class ModulePage(ttk.Frame):
             widget.bind("<Control-Return>", self._shortcut_run)
             self.widgets[field.key] = widget
 
+        heading = ttk.Frame(output_panel, style="Panel.TFrame")
+        heading.pack(fill="x", pady=(0, 6))
+        ttk.Label(heading, text="SIMULATION OUTPUT", style="SectionLabel.TLabel").pack(side="left")
         if self.spec.title == "CPU Scheduling":
-            chart_panel = ttk.Frame(fields_frame, style="Panel.TFrame")
-            chart_panel.pack(fill="x", pady=(4, 12))
-            ttk.Label(chart_panel, text="GANTT CHART", style="FieldLabel.TLabel").pack(anchor="w", pady=(0, 6))
+            chart_panel = tk.Frame(output_panel, bg=SURFACE)
+            chart_panel.pack(fill="x", pady=(0, 10))
+            tk.Label(chart_panel, text="GANTT CHART", bg=SURFACE, fg=ACCENT,
+                     font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
             self.gantt_canvas = tk.Canvas(chart_panel, height=112, bg="#0b0e11",
                                           highlightthickness=1, highlightbackground=BORDER,
                                           borderwidth=0)
@@ -503,10 +557,6 @@ class ModulePage(ttk.Frame):
             gantt_scroll = ttk.Scrollbar(chart_panel, orient="horizontal", command=self.gantt_canvas.xview)
             gantt_scroll.pack(fill="x")
             self.gantt_canvas.configure(xscrollcommand=gantt_scroll.set)
-
-        heading = ttk.Frame(output_panel, style="Panel.TFrame")
-        heading.pack(fill="x", pady=(0, 6))
-        ttk.Label(heading, text="SIMULATION OUTPUT", style="SectionLabel.TLabel").pack(side="left")
 
         output_frame = tk.Frame(output_panel, bg=SURFACE)
         output_frame.pack(fill="both", expand=True)
@@ -603,10 +653,8 @@ class ModulePage(ttk.Frame):
     def _draw_gantt(self, data: dict[str, str]) -> None:
         if self.gantt_canvas is None:
             return
-        processes = [Process(row[0], _int(row[1], "Arrival time"), _int(row[2], "Burst time"),
-                             _int(row[3], "Priority"))
-                     for row in _rows(data["processes"], "Processes", 4)]
-        result = scheduling.run(data["algorithm"], processes, _int(data["quantum"], "Time quantum"))
+        processes, quantum, has_units = _scheduling_inputs(data)
+        result = scheduling.run(data["algorithm"], processes, quantum)
         canvas = self.gantt_canvas
         canvas.delete("all")
         left, right, top, bottom = 28, 20, 24, 66
@@ -615,7 +663,8 @@ class ModulePage(ttk.Frame):
         width = left + extent * unit + right
         colors = {process.pid: PROCESS_COLORS[index % len(PROCESS_COLORS)]
                   for index, process in enumerate(processes)}
-        canvas.create_text(left, 10, anchor="w", text="CPU time", fill=MUTED,
+        axis_unit = "minutes" if has_units else "time units"
+        canvas.create_text(left, 10, anchor="w", text=f"CPU time ({axis_unit})", fill=MUTED,
                            font=("Segoe UI", 8))
         if not result.timeline:
             canvas.create_text(left, 48, anchor="w", text="No scheduled intervals", fill=MUTED)

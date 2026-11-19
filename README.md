@@ -21,7 +21,7 @@ To work on the code, install [Visual Studio Code](https://code.visualstudio.com/
 - Disk Scheduling: FCFS, SSTF, SCAN, C-SCAN, LOOK, and C-LOOK
 - Multiprogramming: time-sliced CPU sharing and memory admission
 
-The CPU scheduling page shows a time-scaled Gantt chart with individual process blocks and boundary times below the process inputs.
+The CPU scheduling page shows a time-scaled Gantt chart with individual process blocks and boundary times in the simulation output. CPU Scheduling and Multiprogramming accept times such as `2 hr/s` or `30 min/s`; when a suffix is used, bare time values are interpreted as minutes.
 
 ## Project team
 
